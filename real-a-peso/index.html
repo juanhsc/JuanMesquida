@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b2a4a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Real → Peso">
+<title>Real a Peso BNA</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b2a4a'/%3E%3Ctext x='32' y='42' font-size='28' text-anchor='middle' fill='%23ffd23f' font-family='Arial' font-weight='700'%3ER$%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230b2a4a'/%3E%3Ctext x='32' y='42' font-size='28' text-anchor='middle' fill='%23ffd23f' font-family='Arial' font-weight='700'%3ER$%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0b2a4a;--card:#123a62;--ink:#f3f8ff;--mute:#9fb9d6;--sun:#ffd23f;--sky:#74c4f0;--err:#ff8a8a}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,sans-serif;display:flex;justify-content:center;padding:max(16px,env(safe-area-inset-top)) 16px 24px}
+main{width:100%;max-width:420px;display:flex;flex-direction:column;gap:14px}
+header{display:flex;justify-content:space-between;align-items:center}
+h1{font:700 20px/1.1 'Space Grotesk',sans-serif;margin:0}
+.rate{font-size:13px;color:var(--mute);text-align:right}
+.rate b{color:var(--sun);font:700 15px 'Space Grotesk',sans-serif}
+.card{background:var(--card);border-radius:20px;padding:18px}
+label{font-size:13px;color:var(--mute);display:block;margin-bottom:6px}
+.in{display:flex;align-items:center;gap:8px;border-bottom:2px solid var(--sky);padding-bottom:6px}
+.in span{font:700 22px 'Space Grotesk',sans-serif;color:var(--sky)}
+input{flex:1;background:none;border:0;color:var(--ink);font:700 clamp(30px,10vw,44px)/1.1 'Space Grotesk',sans-serif;outline:none;width:100%}
+.swap{align-self:center;width:48px;height:48px;border-radius:50%;border:0;background:var(--sun);color:#0b2a4a;font-size:22px;font-weight:700;cursor:pointer}
+.out{font:700 clamp(34px,12vw,52px)/1.05 'Space Grotesk',sans-serif;color:var(--sun);word-break:break-all}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips button,.seg button,.foot button{min-height:44px;border-radius:12px;border:1px solid #2c5a86;background:transparent;color:var(--ink);font:600 15px Inter,sans-serif;padding:0 14px;cursor:pointer}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seg button[aria-pressed=true]{background:var(--sky);color:#0b2a4a;border-color:var(--sky)}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;color:var(--mute)}
+.st.err{color:var(--err)}
+details{font-size:14px;color:var(--mute)}
+details input{font-size:18px;border-bottom:1px solid var(--sky);margin-top:6px}
+button:focus-visible,input:focus-visible{outline:2px solid var(--sun);outline-offset:2px}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Real → Peso</h1>
+    <div class="rate">Banco Nación<br><b id="rateTxt">—</b></div>
+  </header>
+
+  <div class="card">
+    <label id="inLbl" for="amt">Reales</label>
+    <div class="in"><span id="inSym">R$</span><input id="amt" type="text" inputmode="decimal" value="100" autocomplete="off"></div>
+  </div>
+
+  <button class="swap" id="swap" aria-label="Invertir conversión">⇅</button>
+
+  <div class="card">
+    <label id="outLbl">Pesos argentinos</label>
+    <div class="out" id="out">—</div>
+  </div>
+
+  <div class="chips" id="chips"></div>
+
+  <div class="seg" role="group" aria-label="Tipo de cotización">
+    <button id="bVenta" aria-pressed="true">Venta (comprás reales)</button>
+    <button id="bCompra" aria-pressed="false">Compra (vendés reales)</button>
+  </div>
+
+  <div class="foot">
+    <span class="st" id="st">Cargando cotización…</span>
+    <button id="refresh">Actualizar</button>
+  </div>
+
+  <details>
+    <summary>Cargar cotización a mano</summary>
+    <input id="manual" type="text" inputmode="decimal" placeholder="Ej: 266,36">
+  </details>
+</main>
+
+<script>
+{
+const API='https://dolarapi.com/v1/cotizaciones/brl';
+const $=id=>document.getElementById(id);
+const store={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+let data=store.get('brl')||null, side=store.get('side')||'venta', inv=store.get('inv')||false, manual=null;
+
+const fmt=(n,d=2)=>n.toLocaleString('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d});
+const parse=s=>{s=String(s).trim().replace(/\s/g,'');if(s.includes(','))s=s.replace(/\./g,'').replace(',','.');const n=parseFloat(s);return isNaN(n)?0:n};
+const rate=()=>manual||(data?data[side]:0);
+
+function render(){
+  const r=rate();
+  $('bVenta').setAttribute('aria-pressed',side==='venta');
+  $('bCompra').setAttribute('aria-pressed',side==='compra');
+  $('inLbl').textContent=inv?'Pesos argentinos':'Reales';
+  $('outLbl').textContent=inv?'Reales':'Pesos argentinos';
+  $('inSym').textContent=inv?'$':'R$';
+  const presets=inv?[10000,50000,100000,500000]:[10,50,100,500,1000];
+  $('chips').innerHTML=presets.map(p=>`<button data-v="${p}">${inv?'$':'R$'} ${fmt(p,0)}</button>`).join('');
+  $('rateTxt').textContent=r?`R$1 = $${fmt(r)}`:'—';
+  const a=parse($('amt').value);
+  $('out').textContent=r?(inv?'R$ ':'$ ')+fmt(inv?a/r:a*r):'Sin cotización';
+}
+
+function status(){
+  const st=$('st');st.classList.remove('err');
+  if(manual){st.textContent='Usando cotización manual';return}
+  if(!data){st.textContent='Sin datos';return}
+  const d=new Date(data.fechaActualizacion);
+  st.textContent='Actualizado '+d.toLocaleString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+
+async function load(){
+  $('st').textContent='Actualizando…';
+  try{
+    const r=await fetch(API,{cache:'no-store'});
+    if(!r.ok)throw 0;
+    const j=await r.json();
+    data={compra:+j.compra,venta:+j.venta,fechaActualizacion:j.fechaActualizacion};
+    store.set('brl',data);status();
+  }catch(e){
+    status();
+    const st=$('st');st.classList.add('err');
+    st.textContent=data?'Sin conexión · usando última cotización':'No se pudo cargar. Cargala a mano abajo.';
+  }
+  render();
+}
+
+$('amt').addEventListener('input',render);
+$('amt').addEventListener('focus',e=>e.target.select());
+$('swap').addEventListener('click',()=>{inv=!inv;store.set('inv',inv);render()});
+$('bVenta').addEventListener('click',()=>{side='venta';store.set('side',side);render()});
+$('bCompra').addEventListener('click',()=>{side='compra';store.set('side',side);render()});
+$('refresh').addEventListener('click',load);
+$('chips').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;$('amt').value=b.dataset.v;render()});
+$('manual').addEventListener('input',e=>{const n=parse(e.target.value);manual=n>0?n:null;status();render()});
+
+render();status();load();
+}
+</script>
+</body>
+</html>
